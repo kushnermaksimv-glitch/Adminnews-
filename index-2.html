@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Новости</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --text:#e8eaf0; --muted:#8b92a3; --accent:#5b8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { padding:24px 16px 8px; max-width:800px; margin:0 auto; }
+  h1 { margin:0 0 12px; font-size:28px; }
+  input { width:100%; padding:12px 14px; border-radius:10px; border:1px solid #2a2f3a; background:var(--card); color:var(--text); font-size:16px; }
+  .tags { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
+  .tag { padding:6px 12px; border-radius:20px; background:var(--card); border:1px solid #2a2f3a; color:var(--muted); cursor:pointer; font-size:14px; }
+  .tag.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+  main { max-width:800px; margin:0 auto; padding:8px 16px 40px; display:grid; gap:14px; }
+  article { background:var(--card); border-radius:14px; padding:18px; }
+  article img { width:100%; max-height:300px; object-fit:cover; border-radius:10px; margin-bottom:12px; }
+  article h2 { margin:0 0 6px; font-size:20px; }
+  .meta { color:var(--muted); font-size:13px; margin-bottom:10px; }
+  article p { margin:0; line-height:1.55; white-space:pre-wrap; }
+  article a { color:var(--accent); text-decoration:none; display:inline-block; margin-top:10px; }
+  .empty { text-align:center; color:var(--muted); padding:40px 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📰 Новости</h1>
+  <input id="search" type="search" placeholder="Поиск по новостям...">
+  <div class="tags" id="tags"></div>
+</header>
+<main id="list"><div class="empty">Загрузка...</div></main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+let news = [], activeTag = "Все";
+const list = document.getElementById("list");
+const tagsBox = document.getElementById("tags");
+const search = document.getElementById("search");
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const safeUrl = u => /^https?:\/\//i.test(u) ? u : "";
+
+function render() {
+  const q = search.value.trim().toLowerCase();
+  const items = news.filter(n =>
+    (activeTag === "Все" || n.tag === activeTag) &&
+    (!q || ((n.title || "") + " " + (n.text || "")).toLowerCase().includes(q))
+  );
+  list.innerHTML = items.length ? items.map(n => `
+    <article>
+      ${safeUrl(n.image) ? `<img src="${esc(safeUrl(n.image))}" alt="" loading="lazy">` : ""}
+      <h2>${esc(n.title)}</h2>
+      <div class="meta">${esc(new Date(n.date).toLocaleString("ru-RU", {dateStyle:"long", timeStyle:"short"}))}${n.tag ? " · " + esc(n.tag) : ""}</div>
+      <p>${esc(n.text)}</p>
+      ${safeUrl(n.link) ? `<a href="${esc(safeUrl(n.link))}" target="_blank" rel="noopener">Читать далее →</a>` : ""}
+    </article>`).join("") : `<div class="empty">Новостей пока нет</div>`;
+}
+
+function renderTags() {
+  const tags = ["Все", ...new Set(news.map(n => n.tag).filter(Boolean))];
+  if (!tags.includes(activeTag)) activeTag = "Все";
+  tagsBox.innerHTML = tags.map(t => `<span class="tag ${t === activeTag ? "active" : ""}" data-t="${esc(t)}">${esc(t)}</span>`).join("");
+}
+
+tagsBox.addEventListener("click", e => {
+  if (!e.target.dataset.t) return;
+  activeTag = e.target.dataset.t;
+  renderTags(); render();
+});
+search.addEventListener("input", render);
+
+// Новости появляются на сайте сразу, без перезагрузки
+firebase.database().ref("news").on("value", snap => {
+  const data = snap.val() || {};
+  news = Object.entries(data).map(([id, n]) => ({ id, ...n }))
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+  renderTags(); render();
+}, () => list.innerHTML = `<div class="empty">Не удалось загрузить новости (проверь firebase-config.js)</div>`);
+</script>
+</body>
+</html>

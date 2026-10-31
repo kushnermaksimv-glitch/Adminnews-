@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Админка новостей</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --text:#e8eaf0; --muted:#8b92a3; --accent:#5b8cff; --danger:#e5484d; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  .wrap { max-width:700px; margin:0 auto; padding:24px 16px 60px; }
+  h1 { margin:0 0 16px; font-size:26px; }
+  .card { background:var(--card); border-radius:14px; padding:18px; margin-bottom:16px; }
+  input, textarea { width:100%; padding:12px 14px; margin-bottom:10px; border-radius:10px; border:1px solid #2a2f3a; background:#0f1115; color:var(--text); font-size:16px; font-family:inherit; }
+  textarea { min-height:140px; resize:vertical; }
+  button { padding:11px 18px; border:0; border-radius:10px; background:var(--accent); color:#fff; font-size:15px; cursor:pointer; }
+  button.danger { background:var(--danger); padding:7px 12px; font-size:13px; }
+  button.ghost { background:#2a2f3a; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:10px; }
+  .item { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid #2a2f3a; }
+  .item:last-child { border:0; }
+  .item small { color:var(--muted); display:block; }
+  .msg { color:var(--muted); font-size:14px; min-height:20px; margin-top:6px; }
+  .hidden { display:none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>✍️ Админка новостей</h1>
+
+  <!-- Вход -->
+  <div class="card" id="loginBox">
+    <input id="email" type="email" placeholder="Email" autocomplete="username">
+    <input id="pass" type="password" placeholder="Пароль" autocomplete="current-password">
+    <button id="loginBtn">Войти</button>
+    <div class="msg" id="loginMsg"></div>
+  </div>
+
+  <!-- Панель -->
+  <div id="panel" class="hidden">
+    <div class="card">
+      <div class="row" style="margin-bottom:12px">
+        <b id="who"></b>
+        <button class="ghost" id="logoutBtn">Выйти</button>
+      </div>
+      <input id="title" placeholder="Заголовок">
+      <input id="tag" placeholder="Тег (например: Обновления)">
+      <textarea id="text" placeholder="Текст новости"></textarea>
+      <input id="image" placeholder="Ссылка на картинку (необязательно)">
+      <input id="link" placeholder="Ссылка «Читать далее» (необязательно)">
+      <button id="publishBtn">Опубликовать</button>
+      <div class="msg" id="pubMsg"></div>
+    </div>
+
+    <div class="card">
+      <b>Опубликованные новости</b>
+      <div id="items"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const auth = firebase.auth();
+const ref = firebase.database().ref("news");
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+$("loginBtn").onclick = async () => {
+  $("loginMsg").textContent = "Входим...";
+  try { await auth.signInWithEmailAndPassword($("email").value.trim(), $("pass").value); $("loginMsg").textContent = ""; }
+  catch (e) { $("loginMsg").textContent = "Ошибка входа: " + e.message; }
+};
+$("pass").addEventListener("keydown", e => { if (e.key === "Enter") $("loginBtn").click(); });
+$("logoutBtn").onclick = () => auth.signOut();
+
+auth.onAuthStateChanged(user => {
+  $("loginBox").classList.toggle("hidden", !!user);
+  $("panel").classList.toggle("hidden", !user);
+  if (user) { $("who").textContent = user.email; loadItems(); }
+});
+
+$("publishBtn").onclick = async () => {
+  const title = $("title").value.trim(), text = $("text").value.trim();
+  if (!title || !text) { $("pubMsg").textContent = "Заполни заголовок и текст"; return; }
+  $("pubMsg").textContent = "Публикуем...";
+  try {
+    await ref.push({
+      title, text,
+      tag: $("tag").value.trim(),
+      image: $("image").value.trim(),
+      link: $("link").value.trim(),
+      date: new Date().toISOString()
+    });
+    ["title","tag","text","image","link"].forEach(id => $(id).value = "");
+    $("pubMsg").textContent = "✅ Опубликовано! Уже на сайте.";
+  } catch (e) { $("pubMsg").textContent = "Ошибка: " + e.message; }
+};
+
+function loadItems() {
+  ref.on("value", snap => {
+    const data = snap.val() || {};
+    const arr = Object.entries(data).sort((a, b) => new Date(b[1].date) - new Date(a[1].date));
+    $("items").innerHTML = arr.length ? arr.map(([id, n]) => `
+      <div class="item">
+        <div>${esc(n.title)}<small>${esc(new Date(n.date).toLocaleString("ru-RU"))}${n.tag ? " · " + esc(n.tag) : ""}</small></div>
+        <button class="danger" data-id="${esc(id)}">Удалить</button>
+      </div>`).join("") : `<div class="msg">Пока пусто</div>`;
+  });
+}
+
+$("items").addEventListener("click", e => {
+  const id = e.target.dataset.id;
+  if (id && confirm("Удалить эту новость?")) ref.child(id).remove();
+});
+</script>
+</body>
+</html>
